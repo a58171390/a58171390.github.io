@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>選檔授權 | 焙香食品 AI Agents</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;line-height:1.7;color:#222}
+  label{display:block;font-weight:600;margin-top:12px}
+  input{width:100%;padding:8px;font-size:14px;box-sizing:border-box}
+  button{margin-top:16px;padding:10px 18px;font-size:16px;border:0;border-radius:6px;background:#1a73e8;color:#fff;cursor:pointer}
+  button:disabled{background:#999;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:14px}
+  th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;word-break:break-all}
+  .note{background:#fff8e1;border-left:4px solid #f9a825;padding:8px 12px;margin:16px 0}
+  #status{margin-top:12px;color:#555}
+</style>
+</head>
+<body>
+<h1>選檔授權</h1>
+<p>用 Google 檔案選擇器，把指定的雲端硬碟檔案授權給「焙香食品 AI Agents」。只有你勾選的檔案會被授權，其他檔案 Agent 看不到。</p>
+
+<div class="note">
+  要勾選的項目：<br>
+  1. 制度文件（Google 文件）<br>
+  2. 交接總表（Google 試算表）<br>
+  3. 部門 13 資料夾，以及資料夾裡要給 Agent 讀的來源文件
+</div>
+
+<label for="cid">OAuth Client ID</label>
+<input id="cid" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off">
+<label for="key">Picker API 金鑰（瀏覽器用，已限制網域）</label>
+<input id="key" placeholder="AIza..." autocomplete="off">
+<label for="app">專案編號（Project number）</label>
+<input id="app" placeholder="例如 522656702969" autocomplete="off">
+
+<button id="go" disabled>登入並選擇檔案</button>
+<div id="status">載入中…</div>
+
+<table id="result" hidden>
+  <thead><tr><th>名稱</th><th>類型</th><th>ID</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<p style="margin-top:32px;font-size:13px;color:#777">這個頁面不會儲存或傳送任何檔案內容，輸入的設定只存在你這台瀏覽器。<a href="privacy.html">隱私權政策</a></p>
+
+<script>
+  const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  const $ = id => document.getElementById(id);
+  const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const load = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  ['cid', 'key', 'app'].forEach(id => { $(id).value = load('bx_' + id); $(id).addEventListener('change', e => save('bx_' + id, e.target.value.trim())); });
+
+  let gisReady = false, pickerReady = false;
+  function ready() {
+    if (gisReady && pickerReady) { $('go').disabled = false; $('status').textContent = '準備好了，按上方按鈕開始。'; }
+  }
+  window.onGis = () => { gisReady = true; ready(); };
+  window.onGapi = () => gapi.load('picker', () => { pickerReady = true; ready(); });
+
+  $('go').onclick = () => {
+    const cid = $('cid').value.trim(), key = $('key').value.trim(), app = $('app').value.trim();
+    if (!cid || !key || !app) { $('status').textContent = '三個欄位都要填。'; return; }
+    ['cid', 'key', 'app'].forEach(id => save('bx_' + id, $(id).value.trim()));
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: cid,
+      scope: SCOPE,
+      callback: resp => {
+        if (resp.error) { $('status').textContent = '登入失敗：' + resp.error; return; }
+        openPicker(resp.access_token, key, app);
+      }
+    });
+    client.requestAccessToken({ prompt: '' });
+  };
+
+  function openPicker(token, key, app) {
+    const docs = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(true)
+      .setMode(google.picker.DocsViewMode.LIST);
+    const picker = new google.picker.PickerBuilder()
+      .setAppId(app)
+      .setOAuthToken(token)
+      .setDeveloperKey(key)
+      .addView(docs)
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
+      .setLocale('zh-TW')
+      .setTitle('勾選要授權給 Agent 的檔案')
+      .setCallback(onPicked)
+      .build();
+    picker.setVisible(true);
+  }
+
+  function onPicked(data) {
+    if (data.action !== google.picker.Action.PICKED) return;
+    const tbody = document.querySelector('#result tbody');
+    data.docs.forEach(d => {
+      const tr = document.createElement('tr');
+      [d.name, d.mimeType.replace('application/vnd.google-apps.', ''), d.id].forEach(t => {
+        const td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    $('result').hidden = false;
+    $('status').textContent = '已授權 ' + data.docs.length + ' 個項目。還有其他檔案可以再按一次按鈕繼續勾選。';
+  }
+</script>
+<script async defer src="https://accounts.google.com/gsi/client" onload="onGis()"></script>
+<script async defer src="https://apis.google.com/js/api.js" onload="onGapi()"></script>
+</body>
+</html>
