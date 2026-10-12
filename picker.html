@@ -35,6 +35,7 @@
 <input id="app" placeholder="例如 522656702969" autocomplete="off">
 
 <button id="go" disabled>登入並選擇檔案</button>
+<div id="who" style="margin-top:12px;font-weight:600"></div>
 <div id="status">載入中…</div>
 
 <table id="result" hidden>
@@ -67,18 +68,25 @@
       scope: SCOPE,
       callback: resp => {
         if (resp.error) { $('status').textContent = '登入失敗：' + resp.error; return; }
-        openPicker(resp.access_token, key, app);
+        fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + resp.access_token } })
+          .then(r => r.json())
+          .then(j => {
+            const email = j && j.user && j.user.emailAddress || '';
+            $('who').textContent = email ? '目前授權的 Google 帳號：' + email : '';
+            openPicker(resp.access_token, key, app, email);
+          })
+          .catch(() => openPicker(resp.access_token, key, app, ''));
       }
     });
-    client.requestAccessToken({ prompt: '' });
+    client.requestAccessToken({ prompt: 'select_account' });
   };
 
-  function openPicker(token, key, app) {
+  function openPicker(token, key, app, email) {
     const docs = new google.picker.DocsView(google.picker.ViewId.DOCS)
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true)
       .setMode(google.picker.DocsViewMode.LIST);
-    const picker = new google.picker.PickerBuilder()
+    const builder = new google.picker.PickerBuilder()
       .setAppId(app)
       .setOAuthToken(token)
       .setDeveloperKey(key)
@@ -87,8 +95,9 @@
       .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
       .setLocale('zh-TW')
       .setTitle('勾選要授權給 Agent 的檔案')
-      .setCallback(onPicked)
-      .build();
+      .setCallback(onPicked);
+    if (email) builder.setAuthUser(email);
+    const picker = builder.build();
     picker.setVisible(true);
   }
 
